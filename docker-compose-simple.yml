@@ -1,0 +1,118 @@
+version: '3.8'
+
+services:
+  dashboard:
+    image: node:20-alpine
+    container_name: clara-dashboard
+    ports:
+      - "8081:3000"
+    networks:
+      - dashboard-network
+    restart: unless-stopped
+    command: >
+      sh -c "mkdir -p /app && cd /app &&
+             echo '{\"dependencies\":{\"express\":\"^4.18.2\"}}' > package.json &&
+             npm install &&
+             cat > server.js << 'EOF'
+             const express = require('express');
+             const app = express();
+             const PORT = 3000;
+             
+             // Health check
+             app.get('/api/health', (req, res) => {
+               res.json({ status: 'healthy', timestamp: new Date().toISOString() });
+             });
+             
+             // Cron status (mock)
+             app.get('/api/cron-status', (req, res) => {
+               res.json({
+                 status: 'running',
+                 activeJobs: 4,
+                 jobs: [
+                   { name: 'Morning Text', schedule: '7:30 AM', status: 'active' },
+                   { name: 'Morning Email', schedule: '8:00 AM', status: 'active' },
+                   { name: 'Saturday Light', schedule: '7:30 AM Sat', status: 'active' },
+                   { name: 'Sunday Week Ahead', schedule: '7:00 PM Sun', status: 'active' }
+                 ]
+               });
+             });
+             
+             // Backup status (mock)
+             app.get('/api/backup-status', (req, res) => {
+               res.json({
+                 status: 'healthy',
+                 lastBackup: '2026-02-06 05:17',
+                 nextBackup: '2026-02-07 03:00',
+                 size: '32.4 MB'
+               });
+             });
+             
+             // Docker status (mock)
+             app.get('/api/docker-status', (req, res) => {
+               res.json({
+                 status: 'running',
+                 containers: ['homeassistant', 'n8n', 'nodered01', 'portainer_agent']
+               });
+             });
+             
+             // Serve static dashboard
+             app.get('/', (req, res) => {
+               res.send(\`<!DOCTYPE html>
+               <html><head><title>Clara Dashboard</title><style>
+               body{font-family:sans-serif;margin:0;padding:20px;background:#f5f5f5}
+               h1{color:#333;text-align:center}
+               .grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(300px,1fr));gap:20px;max-width:1200px;margin:0 auto}
+               .card{background:white;border-radius:10px;padding:20px;box-shadow:0 2px 5px rgba(0,0,0,0.1)}
+               .card h2{margin-top:0;color:#667eea}
+               .status{display:inline-block;width:12px;height:12px;border-radius:50%;margin-right:8px}
+               .green{background:#22c55e}
+               .orange{background:#f97316}
+               .red{background:#ef4444}
+               .gray{background:#9ca3af}
+               ul{list-style:none;padding:0}
+               li{padding:5px 0;border-bottom:1px solid #eee}
+               </style></head>
+               <body><h1>Clara Dashboard</h1><div class=\"grid\">
+               <div class=\"card\"><h2><span class=\"status green\"></span>System Health</h2>
+               <p><strong>Status:</strong> <span id=\"health\">Loading...</span></p>
+               <p><strong>Last Check:</strong> <span id=\"time\">-</span></p></div>
+               <div class=\"card\"><h2><span class=\"status green\"></span>Cron Jobs</h2>
+               <p><strong>Active Jobs:</strong> 4</p><ul id=\"cron\"><li>Loading...</li></ul></div>
+               <div class=\"card\"><h2><span class=\"status green\"></span>Backup Status</h2>
+               <p><strong>Status:</strong> <span id=\"backup\">Loading...</span></p>
+               <p><strong>Last Backup:</strong> <span id=\"last\">-</span></p></div>
+               <div class=\"card\"><h2><span class=\"status green\"></span>Docker Status</h2>
+               <p><strong>Running Containers:</strong> 4</p><ul id=\"docker\"><li>Loading...</li></ul></div>
+               </div><script>
+               async function load(){
+                 const h=await fetch('/api/health').then(r=>r.json()).catch(()=>({status:'error'}));
+                 document.getElementById('health').textContent=h.status;
+                 document.getElementById('time').textContent=new Date().toLocaleString();
+                 
+                 const c=await fetch('/api/cron-status').then(r=>r.json()).catch(()=>({jobs:[]}));
+                 document.getElementById('cron').innerHTML=c.jobs.map(j=>\`<li><strong>\${j.name}</strong> - \${j.schedule}</li>\`).join('');
+                 
+                 const b=await fetch('/api/backup-status').then(r=>r.json()).catch(()=>({status:'unknown'}));
+                 document.getElementById('backup').textContent=b.status;
+                 document.getElementById('last').textContent=b.lastBackup;
+                 
+                 const d=await fetch('/api/docker-status').then(r=>r.json()).catch(()=>({containers:[]}));
+                 document.getElementById('docker').innerHTML=d.containers.map(c=>\`<li>\${c}</li>\`).join('');
+               }
+               load();
+               setInterval(load,30000);
+               </script></body></html>\`);
+             });
+             
+             app.listen(PORT, () => console.log('Dashboard running on port ' + PORT));
+             EOF
+             node server.js"
+    healthcheck:
+      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost:3000/api/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+networks:
+  dashboard-network:
+    driver: bridge
