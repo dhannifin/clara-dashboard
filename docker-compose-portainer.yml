@@ -1,0 +1,55 @@
+version: '3.8'
+
+services:
+  backend:
+    image: node:20-alpine
+    container_name: clara-dashboard-backend
+    working_dir: /app
+    ports:
+      - "3001:3000"
+    volumes:
+      - type: bind
+        source: ./server
+        target: /app
+        read_only: true
+      - type: bind
+        source: ./data
+        target: /app/data
+    environment:
+      - PORT=3000
+      - DB_PATH=/app/data/clara.db
+      - NODE_ENV=production
+    networks:
+      - clara-network
+    restart: unless-stopped
+    command: >
+      sh -c "npm install --production && node server.js"
+    healthcheck:
+      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost:3000/api/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  frontend:
+    image: nginx:alpine
+    container_name: clara-dashboard-frontend
+    ports:
+      - "8081:80"
+    volumes:
+      - type: bind
+        source: ./client/dist
+        target: /usr/share/nginx/html
+        read_only: true
+      - type: bind
+        source: ./client/nginx.conf
+        target: /etc/nginx/conf.d/default.conf
+        read_only: true
+    depends_on:
+      - backend
+    networks:
+      - clara-network
+    restart: unless-stopped
+
+networks:
+  clara-network:
+    driver: bridge
