@@ -6,7 +6,7 @@ const router = express.Router();
 
 router.get('/', async (req, res) => {
   try {
-    const backupDir = process.env.OPENCLAW_BACKUPS_DIR || path.join(process.env.HOME, '.openclaw-backups');
+    const backupDir = process.env.OPENCLAW_BACKUPS_DIR || '/Users/nora/.openclaw-backups';
 
     let backupInfo = {
       lastBackup: null,

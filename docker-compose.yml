@@ -9,6 +9,8 @@ services:
     networks:
       - dashboard-network
     restart: unless-stopped
+    volumes:
+      - /Users/nora/.openclaw-backups:/backups:ro
     entrypoint: ["/bin/sh", "-c"]
     command:
       - |
@@ -41,13 +43,30 @@ services:
           });
         });
 
-        app.get("/api/backup-status", (req, res) => {
-          res.json({
-            status: "healthy",
-            lastBackup: "2026-02-07 07:16",
-            nextBackup: "2026-02-08 03:00",
-            size: "40 KB"
-          });
+        app.get("/api/backup-status", async (req, res) => {
+          const fs = require('fs').promises;
+          const path = require('path');
+          try {
+            const backupDir = '/backups';
+            const files = await fs.readdir(backupDir);
+            const backupFiles = files.filter(f => f.endsWith('.tar.gz'));
+            const fileStats = await Promise.all(
+              backupFiles.map(async (file) => {
+                const stats = await fs.stat(path.join(backupDir, file));
+                return { name: file, mtime: stats.mtime, size: stats.size };
+              })
+            );
+            fileStats.sort((a, b) => b.mtime - a.mtime);
+            const lastBackup = fileStats[0];
+            res.json({
+              status: "healthy",
+              lastBackup: lastBackup ? lastBackup.mtime.toISOString().replace('T', ' ').substring(0, 16) : "Unknown",
+              totalBackups: backupFiles.length,
+              size: lastBackup ? Math.round(lastBackup.size / 1024) + " KB" : "0 KB"
+            });
+          } catch (e) {
+            res.json({ status: "error", lastBackup: "Unknown", error: e.message });
+          }
         });
 
         app.get("/", (req, res) => {
