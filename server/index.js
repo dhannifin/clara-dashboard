@@ -6,6 +6,7 @@ import { fileURLToPath } from 'url';
 import { initDatabase } from './db.js';
 import healthRouter from './routes/health.js';
 import backupsRouter from './routes/backups.js';
+import cronRouter from './routes/cron.js';
 import briefingsRouter from './routes/briefings.js';
 import todosRouter from './routes/todos.js';
 import dockerRouter from './routes/docker.js';
@@ -21,6 +22,7 @@ const PORT = process.env.PORT || 3001;
 // Middleware
 app.use(cors());
 app.use(express.json());
+app.use(express.static('public'));
 
 // Initialize database
 initDatabase();
@@ -28,6 +30,7 @@ initDatabase();
 // API Routes
 app.use('/api/health', healthRouter);
 app.use('/api/backups', backupsRouter);
+app.use('/api/cron-status', cronRouter);
 app.use('/api/briefings', briefingsRouter);
 app.use('/api/todos', todosRouter);
 app.use('/api/docker', dockerRouter);

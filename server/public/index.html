@@ -1,0 +1,160 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <title>Clara Dashboard</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <style>
+    * { box-sizing: border-box; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      margin: 0;
+      padding: 20px;
+      background: #1a1a2e;
+      color: #eee;
+    }
+    h1 {
+      color: #667eea;
+      text-align: center;
+      margin-bottom: 30px;
+    }
+    .grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+      gap: 20px;
+      max-width: 1200px;
+      margin: 0 auto;
+    }
+    .card {
+      background: #16213e;
+      border-radius: 12px;
+      padding: 20px;
+      border: 1px solid #0f3460;
+    }
+    .card h2 {
+      margin: 0 0 15px 0;
+      color: #e94560;
+      font-size: 1.1em;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    .dot {
+      width: 10px;
+      height: 10px;
+      border-radius: 50%;
+      background: #22c55e;
+      animation: pulse 2s infinite;
+    }
+    @keyframes pulse {
+      0%, 100% { opacity: 1; }
+      50% { opacity: 0.5; }
+    }
+    ul {
+      list-style: none;
+      padding: 0;
+      margin: 0;
+      max-height: 300px;
+      overflow-y: auto;
+    }
+    li {
+      padding: 8px 0;
+      border-bottom: 1px solid #0f3460;
+      font-size: 0.9em;
+    }
+    li:last-child { border: none; }
+    .label { color: #888; }
+    .status-active { color: #22c55e; }
+    .status-disabled { color: #ef4444; }
+    .status-error { color: #f59e0b; }
+    .refresh-btn {
+      background: #667eea;
+      color: white;
+      border: none;
+      padding: 8px 16px;
+      border-radius: 6px;
+      cursor: pointer;
+      font-size: 0.9em;
+    }
+    .refresh-btn:hover { background: #5a6fd6; }
+    .meta {
+      font-size: 0.8em;
+      color: #666;
+      margin-top: 10px;
+    }
+  </style>
+</head>
+<body>
+  <h1>🏠 Clara Dashboard</h1>
+  <div style="text-align: center; margin-bottom: 20px;">
+    <button class="refresh-btn" onclick="loadData()">🔄 Refresh</button>
+  </div>
+  <div class="grid">
+    <div class="card">
+      <h2><span class="dot"></span>System Health</h2>
+      <p><span class="label">Status:</span> <span id="health">Loading...</span></p>
+      <p><span class="label">Updated:</span> <span id="time">-</span></p>
+      <div class="meta" id="health-meta"></div>
+    </div>
+    <div class="card">
+      <h2><span class="dot"></span>Cron Jobs</h2>
+      <ul id="cron"><li>Loading...</li></ul>
+      <div class="meta" id="cron-meta"></div>
+    </div>
+    <div class="card">
+      <h2><span class="dot"></span>Backup Status</h2>
+      <p><span class="label">Status:</span> <span id="backup">Loading...</span></p>
+      <p><span class="label">Last:</span> <span id="last">-</span></p>
+      <p><span class="label">Total:</span> <span id="total">-</span></p>
+      <p><span class="label">Size:</span> <span id="size">-</span></p>
+      <div class="meta" id="backup-meta"></div>
+    </div>
+  </div>
+
+  <script>
+    async function loadData() {
+      // Health
+      try {
+        const h = await fetch("/api/health").then(r => r.json());
+        document.getElementById("health").textContent = h.status;
+        document.getElementById("health").className = h.status === 'healthy' ? 'status-active' : 'status-error';
+        document.getElementById("time").textContent = new Date().toLocaleString();
+        document.getElementById("health-meta").textContent = `Uptime: ${Math.floor(h.uptime / 60)}m`;
+      } catch(e) {
+        document.getElementById("health").textContent = "error";
+        document.getElementById("health").className = "status-error";
+      }
+
+      // Cron Jobs
+      try {
+        const c = await fetch("/api/cron-status").then(r => r.json());
+        const jobsHtml = c.jobs.map(j => {
+          const statusClass = j.enabled ? 'status-active' : 'status-disabled';
+          const statusIcon = j.enabled ? '✓' : '✗';
+          return `<li><strong>${statusIcon} ${j.name}</strong><br><span class="label">${j.schedule}</span></li>`;
+        }).join("");
+        document.getElementById("cron").innerHTML = jobsHtml || '<li>No jobs found</li>';
+        document.getElementById("cron-meta").textContent = `${c.activeJobs || 0} active / ${c.totalJobs || 0} total (${c.source || 'unknown'})`;
+      } catch(e) {
+        document.getElementById("cron").innerHTML = '<li class="status-error">Error loading jobs</li>';
+      }
+
+      // Backups
+      try {
+        const b = await fetch("/api/backup-status").then(r => r.json());
+        document.getElementById("backup").textContent = b.status;
+        document.getElementById("backup").className = b.status === 'healthy' ? 'status-active' : (b.status === 'error' ? 'status-error' : '');
+        document.getElementById("last").textContent = b.lastBackup || 'None';
+        document.getElementById("total").textContent = b.totalBackups || 0;
+        document.getElementById("size").textContent = b.totalSizeFormatted || '0 KB';
+        document.getElementById("backup-meta").textContent = b.error || '';
+      } catch(e) {
+        document.getElementById("backup").textContent = "error";
+        document.getElementById("backup").className = "status-error";
+      }
+    }
+
+    loadData();
+    setInterval(loadData, 30000);
+  </script>
+</body>
+</html>
