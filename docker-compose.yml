@@ -22,52 +22,36 @@ services:
         {"type":"module","dependencies":{"express":"^4.18.2","cors":"^2.8.5"}}
         EOF
         npm install --silent
-        cat > server.js << 'SERVEREOF'
+        cat > server.js << 'ENDOFFILE'
         import express from 'express';
         import cors from 'cors';
         import fs from 'fs';
         import path from 'path';
         import { exec } from 'child_process';
         import { promisify } from 'util';
-        
         const execAsync = promisify(exec);
         const app = express();
         const PORT = 3000;
-        
         app.use(cors());
         app.use(express.json());
-        
-        // Health check
         app.get("/api/health", (req, res) => {
           res.json({ status: "healthy", timestamp: new Date().toISOString(), uptime: process.uptime() });
         });
-        
-        // Parse OpenClaw cron output
         function parseCronJobs(output) {
           const jobs = [];
           const lines = output.split('\n').filter(l => l.trim());
-          
           for (const line of lines) {
-            // Match: UUID name enabled schedule
             const parts = line.trim().split(/\s{2,}/);
             if (parts.length >= 4 && parts[0].match(/^[0-9a-f-]{36}$/i)) {
-              jobs.push({
-                id: parts[0],
-                name: parts[1],
-                enabled: parts[2] === 'enabled',
-                schedule: parts.slice(3).join(' ')
-              });
+              jobs.push({ id: parts[0], name: parts[1], enabled: parts[2] === 'enabled', schedule: parts.slice(3).join(' ') });
             }
           }
           return jobs;
         }
-        
-        // Cron status - LIVE DATA
         app.get("/api/cron-status", async (req, res) => {
           try {
             let jobs = [];
             let source = 'live';
-            
             try {
               const { stdout } = await execAsync('openclaw cron list 2>/dev/null || echo ""');
               if (stdout && stdout.trim()) {
@@ -76,8 +60,6 @@ services:
             } catch (e) {
               console.error('Cron fetch error:', e.message);
             }
-            
-            // Fallback if no jobs parsed
             if (jobs.length === 0) {
               source = 'fallback';
               jobs = [
@@ -88,21 +70,11 @@ services:
                 { id: '5', name: 'Outlook Token Refresh', enabled: true, schedule: 'Every 45 min' }
               ];
             }
-            
-            res.json({
-              status: 'running',
-              activeJobs: jobs.filter(j => j.enabled).length,
-              totalJobs: jobs.length,
-              jobs: jobs,
-              source: source,
-              timestamp: new Date().toISOString()
-            });
+            res.json({ status: 'running', activeJobs: jobs.filter(j => j.enabled).length, totalJobs: jobs.length, jobs: jobs, source: source, timestamp: new Date().toISOString() });
           } catch (e) {
             res.status(500).json({ status: 'error', error: e.message });
           }
         });
-        
-        // Format bytes helper
         function formatBytes(bytes) {
           if (bytes === 0) return '0 Bytes';
           const k = 1024;
@@ -110,59 +82,29 @@ services:
           const i = Math.floor(Math.log(bytes) / Math.log(k));
           return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
         }
-        
-        // Backup status - LIVE DATA from volume
         app.get("/api/backup-status", async (req, res) => {
           const backupDir = '/backups';
-          
           try {
             if (!fs.existsSync(backupDir)) {
               throw new Error('Backup directory not mounted');
             }
-            
             const files = fs.readdirSync(backupDir).filter(f => f.endsWith('.tar.gz'));
-            
             if (files.length === 0) {
               return res.json({ status: 'no-backups', lastBackup: null, totalBackups: 0 });
             }
-            
             const fileStats = files.map(file => {
               const stats = fs.statSync(path.join(backupDir, file));
-              return {
-                name: file,
-                date: stats.mtime.toISOString(),
-                dateFormatted: stats.mtime.toISOString().replace('T', ' ').substring(0, 16),
-                size: stats.size,
-                sizeFormatted: formatBytes(stats.size)
-              };
+              return { name: file, date: stats.mtime.toISOString(), dateFormatted: stats.mtime.toISOString().replace('T', ' ').substring(0, 16), size: stats.size, sizeFormatted: formatBytes(stats.size) };
             });
-            
             fileStats.sort((a, b) => new Date(b.date) - new Date(a.date));
             const last = fileStats[0];
             const totalSize = fileStats.reduce((sum, f) => sum + f.size, 0);
-            
-            res.json({
-              status: 'healthy',
-              lastBackup: last.dateFormatted,
-              lastBackupRaw: last.date,
-              totalBackups: files.length,
-              totalSize: totalSize,
-              totalSizeFormatted: formatBytes(totalSize),
-              recentBackups: fileStats.slice(0, 5)
-            });
+            res.json({ status: 'healthy', lastBackup: last.dateFormatted, lastBackupRaw: last.date, totalBackups: files.length, totalSize: totalSize, totalSizeFormatted: formatBytes(totalSize), recentBackups: fileStats.slice(0, 5) });
           } catch (e) {
             console.error('Backup error:', e.message);
-            res.json({
-              status: 'error',
-              error: e.message,
-              lastBackup: '2026-02-10 03:00',
-              totalBackups: 7,
-              size: '51 KB'
-            });
+            res.json({ status: 'error', error: e.message, lastBackup: '2026-02-10 03:00', totalBackups: 7, size: '51 KB' });
           }
         });
-        
-        // Main dashboard HTML
         app.get("/", (req, res) => {
           res.send(`<!DOCTYPE html>
 <html><head><title>Clara Dashboard</title>
@@ -181,40 +123,27 @@ li{padding:8px 0;border-bottom:1px solid #0f3460;font-size:0.9em}
 li:last-child{border:none}
 .label{color:#888}
 .status-active{color:#22c55e}
-.status-disabled{color:#ef4444}
 .refresh-btn{background:#667eea;color:white;border:none;padding:8px 16px;border-radius:6px;cursor:pointer}
 .meta{font-size:0.8em;color:#666;margin-top:10px}
 </style></head>
 <body>
-<h1>🏠 Clara Dashboard</h1>
-<div style="text-align:center;margin-bottom:20px"><button class="refresh-btn" onclick="load()">🔄 Refresh</button></div>
+<h1>Clara Dashboard</h1>
+<div style="text-align:center;margin-bottom:20px"><button class="refresh-btn" onclick="load()">Refresh</button></div>
 <div class="grid">
-<div class="card"><h2><span class="dot"></span>System Health</h2>
-<p><span class="label">Status:</span> <span id="health">Loading...</span></p>
-<p><span class="label">Updated:</span> <span id="time">-</span></p>
-</div>
-<div class="card"><h2><span class="dot"></span>Cron Jobs</h2>
-<ul id="cron"><li>Loading...</li></ul>
-<div class="meta" id="cron-meta"></div>
-</div>
-<div class="card"><h2><span class="dot"></span>Backup Status</h2>
-<p><span class="label">Status:</span> <span id="backup">Loading...</span></p>
-<p><span class="label">Last:</span> <span id="last">-</span></p>
-<p><span class="label">Total:</span> <span id="total">-</span></p>
-</div>
+<div class="card"><h2><span class="dot"></span>System Health</h2><p><span class="label">Status:</span> <span id="health">Loading...</span></p><p><span class="label">Updated:</span> <span id="time">-</span></p></div>
+<div class="card"><h2><span class="dot"></span>Cron Jobs</h2><ul id="cron"><li>Loading...</li></ul><div class="meta" id="cron-meta"></div></div>
+<div class="card"><h2><span class="dot"></span>Backup Status</h2><p><span class="label">Status:</span> <span id="backup">Loading...</span></p><p><span class="label">Last:</span> <span id="last">-</span></p><p><span class="label">Total:</span> <span id="total">-</span></p></div>
 </div>
 <script>
 async function load(){
-try{const h=await fetch("/api/health").then(r=>r.json());document.getElementById("health").textContent=h.status;document.getElementById("health").className=h.status==='healthy'?'status-active':'';document.getElementById("time").textContent=new Date().toLocaleString();}catch(e){document.getElementById("health").textContent="error";}
-try{const c=await fetch("/api/cron-status").then(r=>r.json());const html=c.jobs.map(j=>\`<li><strong>\${j.enabled?'✓':'✗'} \${j.name}</strong><br><span class="label">\${j.schedule}</span></li>\`).join("");document.getElementById("cron").innerHTML=html||'<li>No jobs</li>';document.getElementById("cron-meta").textContent=\`\${c.activeJobs||0} active / \${c.totalJobs||0} total\`;}catch(e){document.getElementById("cron").innerHTML='<li>Error</li>';}
-try{const b=await fetch("/api/backup-status").then(r=>r.json());document.getElementById("backup").textContent=b.status;document.getElementById("backup").className=b.status==='healthy'?'status-active':'';document.getElementById("last").textContent=b.lastBackup||'None';document.getElementById("total").textContent=b.totalBackups||0;}catch(e){document.getElementById("backup").textContent="error";}
-}
+try{const h=await fetch("/api/health").then(r=>r.json());document.getElementById("health").textContent=h.status;document.getElementById("health").className=h.status==="healthy"?"status-active":"";document.getElementById("time").textContent=new Date().toLocaleString();}catch(e){document.getElementById("health").textContent="error";}
+try{const c=await fetch("/api/cron-status").then(r=>r.json());const html=c.jobs.map(j=>"<li><strong>"+(j.enabled?"✓":"✗")+" "+j.name+"</strong><br><span class=\"label\">"+j.schedule+"</span></li>").join("");document.getElementById("cron").innerHTML=html||"<li>No jobs</li>";document.getElementById("cron-meta").textContent=(c.activeJobs||0)+" active / "+(c.totalJobs||0)+" total";}catch(e){document.getElementById("cron").innerHTML="<li>Error</li>";}
+try{const b=await fetch("/api/backup-status").then(r=>r.json());document.getElementById("backup").textContent=b.status;document.getElementById("backup").className=b.status==="healthy"?"status-active":"";document.getElementById("last").textContent=b.lastBackup||"None";document.getElementById("total").textContent=b.totalBackups||0;}catch(e){document.getElementById("backup").textContent="error";}}
 load();setInterval(load,30000);
 </script></body></html>`);
         });
-        
         app.listen(PORT, "0.0.0.0", () => console.log("Dashboard on port " + PORT));
-        SERVEREOF
+        ENDOFFILE
         exec node server.js
     healthcheck:
       test: ["CMD", "wget", "-q", "-O-", "http://localhost:3000/api/health"]
