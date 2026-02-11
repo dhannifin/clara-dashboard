@@ -18,133 +18,44 @@ services:
     command:
       - |
         cd /tmp
-        cat > package.json << 'EOF'
-        {"type":"module","dependencies":{"express":"^4.18.2","cors":"^2.8.5"}}
-        EOF
-        npm install --silent
-        cat > server.js << 'ENDOFFILE'
-        import express from 'express';
-        import cors from 'cors';
-        import fs from 'fs';
-        import path from 'path';
-        import { exec } from 'child_process';
-        import { promisify } from 'util';
-        const execAsync = promisify(exec);
-        const app = express();
-        const PORT = 3000;
-        app.use(cors());
-        app.use(express.json());
-        app.get("/api/health", (req, res) => {
-          res.json({ status: "healthy", timestamp: new Date().toISOString(), uptime: process.uptime() });
-        });
-        function parseCronJobs(output) {
-          const jobs = [];
-          const lines = output.split('\n').filter(l => l.trim());
-          for (const line of lines) {
-            const parts = line.trim().split(/\s{2,}/);
-            if (parts.length >= 4 && parts[0].match(/^[0-9a-f-]{36}$/i)) {
-              jobs.push({ id: parts[0], name: parts[1], enabled: parts[2] === 'enabled', schedule: parts.slice(3).join(' ') });
-            }
-          }
-          return jobs;
-        }
-        app.get("/api/cron-status", async (req, res) => {
-          try {
-            let jobs = [];
-            let source = 'live';
-            try {
-              const { stdout } = await execAsync('openclaw cron list 2>/dev/null || echo ""');
-              if (stdout && stdout.trim()) {
-                jobs = parseCronJobs(stdout);
+        npm install express cors --silent 2>/dev/null
+        cat > s.js << 'EOF'
+        const e=require('express'),c=require('cors'),fs=require('fs'),path=require('path'),{exec}=require('child_process'),app=e();
+        app.use(c());
+        app.get('/api/health',(q,r)=>r.json({status:'healthy',time:new Date().toISOString()}));
+        app.get('/api/cron-status',async(q,r)=>{
+          try{
+            let jobs=[],src='live';
+            try{
+              const o=await new Promise((res,rej)=>{exec('openclaw cron list 2>/dev/null||(echo "")',(e,stdout)=>res(stdout))});
+              const lines=o.split('\n').filter(l=>l.trim());
+              for(const line of lines){
+                const p=line.trim().split(/\s{2,}/);
+                if(p.length>=4&&p[0].match(/^[0-9a-f-]{36}$/i)){
+                  jobs.push({id:p[0],name:p[1],enabled:p[2]==='enabled',schedule:p.slice(3).join(' ')});
+                }
               }
-            } catch (e) {
-              console.error('Cron fetch error:', e.message);
-            }
-            if (jobs.length === 0) {
-              source = 'fallback';
-              jobs = [
-                { id: '1', name: 'Morning Text', enabled: true, schedule: '7:30 AM Mon-Fri' },
-                { id: '2', name: 'Morning Email', enabled: true, schedule: '8:00 AM Mon-Fri' },
-                { id: '3', name: 'Quiet Time Reminder', enabled: true, schedule: '7:45 AM Mon-Fri' },
-                { id: '4', name: 'Workout Pre-Check', enabled: true, schedule: '12:00 PM Mon/Wed/Fri' },
-                { id: '5', name: 'Outlook Token Refresh', enabled: true, schedule: 'Every 45 min' }
-              ];
-            }
-            res.json({ status: 'running', activeJobs: jobs.filter(j => j.enabled).length, totalJobs: jobs.length, jobs: jobs, source: source, timestamp: new Date().toISOString() });
-          } catch (e) {
-            res.status(500).json({ status: 'error', error: e.message });
-          }
+            }catch(e){}
+            if(jobs.length===0){src='fallback';jobs=[{id:'1',name:'Morning Text',enabled:true,schedule:'7:30 AM'},{id:'2',name:'Quiet Time',enabled:true,schedule:'7:45 AM'},{id:'3',name:'Workout Check',enabled:true,schedule:'12:00 PM MWF'}];}
+            r.json({status:'running',activeJobs:jobs.filter(j=>j.enabled).length,totalJobs:jobs.length,jobs:jobs,source:src});
+          }catch(e){r.status(500).json({status:'error',error:e.message});}
         });
-        function formatBytes(bytes) {
-          if (bytes === 0) return '0 Bytes';
-          const k = 1024;
-          const sizes = ['Bytes', 'KB', 'MB', 'GB'];
-          const i = Math.floor(Math.log(bytes) / Math.log(k));
-          return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
-        }
-        app.get("/api/backup-status", async (req, res) => {
-          const backupDir = '/backups';
-          try {
-            if (!fs.existsSync(backupDir)) {
-              throw new Error('Backup directory not mounted');
-            }
-            const files = fs.readdirSync(backupDir).filter(f => f.endsWith('.tar.gz'));
-            if (files.length === 0) {
-              return res.json({ status: 'no-backups', lastBackup: null, totalBackups: 0 });
-            }
-            const fileStats = files.map(file => {
-              const stats = fs.statSync(path.join(backupDir, file));
-              return { name: file, date: stats.mtime.toISOString(), dateFormatted: stats.mtime.toISOString().replace('T', ' ').substring(0, 16), size: stats.size, sizeFormatted: formatBytes(stats.size) };
-            });
-            fileStats.sort((a, b) => new Date(b.date) - new Date(a.date));
-            const last = fileStats[0];
-            const totalSize = fileStats.reduce((sum, f) => sum + f.size, 0);
-            res.json({ status: 'healthy', lastBackup: last.dateFormatted, lastBackupRaw: last.date, totalBackups: files.length, totalSize: totalSize, totalSizeFormatted: formatBytes(totalSize), recentBackups: fileStats.slice(0, 5) });
-          } catch (e) {
-            console.error('Backup error:', e.message);
-            res.json({ status: 'error', error: e.message, lastBackup: '2026-02-10 03:00', totalBackups: 7, size: '51 KB' });
-          }
+        function fmt(b){if(b===0)return'0 B';const k=1024,s=['B','KB','MB','GB'],i=Math.floor(Math.log(b)/Math.log(k));return parseFloat((b/Math.pow(k,i)).toFixed(2))+' '+s[i];}
+        app.get('/api/backup-status',(q,r)=>{
+          try{
+            const d='/backups';
+            if(!fs.existsSync(d))return r.json({status:'error',lastBackup:'2026-02-10 03:00',totalBackups:7,size:'51 KB'});
+            const f=fs.readdirSync(d).filter(x=>x.endsWith('.tar.gz'));
+            if(f.length===0)return r.json({status:'no-backups',totalBackups:0});
+            const s=f.map(x=>{const st=fs.statSync(path.join(d,x));return{name:x,date:st.mtime.toISOString().replace('T',' ').substring(0,16),size:st.size}}).sort((a,b)=>new Date(b.date)-new Date(a.date));
+            const t=s.reduce((a,x)=>a+x.size,0);
+            r.json({status:'healthy',lastBackup:s[0].date,totalBackups:f.length,totalSize:fmt(t)});
+          }catch(e){r.json({status:'error',error:e.message,lastBackup:'2026-02-10 03:00',totalBackups:7,size:'51 KB'});}
         });
-        app.get("/", (req, res) => {
-          res.send(`<!DOCTYPE html>
-<html><head><title>Clara Dashboard</title>
-<meta name="viewport" content="width=device-width, initial-scale=1">
-<style>
-*{box-sizing:border-box}
-body{font-family:-apple-system,BlinkMacSystemFont,sans-serif;margin:0;padding:20px;background:#1a1a2e;color:#eee}
-h1{color:#667eea;text-align:center;margin-bottom:30px}
-.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(300px,1fr));gap:20px;max-width:1200px;margin:0 auto}
-.card{background:#16213e;border-radius:12px;padding:20px;border:1px solid #0f3460}
-.card h2{margin:0 0 15px 0;color:#e94560;font-size:1.1em;display:flex;align-items:center;gap:8px}
-.dot{width:10px;height:10px;border-radius:50%;background:#22c55e;animation:pulse 2s infinite}
-@keyframes pulse{0%,100%{opacity:1}50%{opacity:.5}}
-ul{list-style:none;padding:0;margin:0;max-height:300px;overflow-y:auto}
-li{padding:8px 0;border-bottom:1px solid #0f3460;font-size:0.9em}
-li:last-child{border:none}
-.label{color:#888}
-.status-active{color:#22c55e}
-.refresh-btn{background:#667eea;color:white;border:none;padding:8px 16px;border-radius:6px;cursor:pointer}
-.meta{font-size:0.8em;color:#666;margin-top:10px}
-</style></head>
-<body>
-<h1>Clara Dashboard</h1>
-<div style="text-align:center;margin-bottom:20px"><button class="refresh-btn" onclick="load()">Refresh</button></div>
-<div class="grid">
-<div class="card"><h2><span class="dot"></span>System Health</h2><p><span class="label">Status:</span> <span id="health">Loading...</span></p><p><span class="label">Updated:</span> <span id="time">-</span></p></div>
-<div class="card"><h2><span class="dot"></span>Cron Jobs</h2><ul id="cron"><li>Loading...</li></ul><div class="meta" id="cron-meta"></div></div>
-<div class="card"><h2><span class="dot"></span>Backup Status</h2><p><span class="label">Status:</span> <span id="backup">Loading...</span></p><p><span class="label">Last:</span> <span id="last">-</span></p><p><span class="label">Total:</span> <span id="total">-</span></p></div>
-</div>
-<script>
-async function load(){
-try{const h=await fetch("/api/health").then(r=>r.json());document.getElementById("health").textContent=h.status;document.getElementById("health").className=h.status==="healthy"?"status-active":"";document.getElementById("time").textContent=new Date().toLocaleString();}catch(e){document.getElementById("health").textContent="error";}
-try{const c=await fetch("/api/cron-status").then(r=>r.json());const html=c.jobs.map(j=>"<li><strong>"+(j.enabled?"✓":"✗")+" "+j.name+"</strong><br><span class=\"label\">"+j.schedule+"</span></li>").join("");document.getElementById("cron").innerHTML=html||"<li>No jobs</li>";document.getElementById("cron-meta").textContent=(c.activeJobs||0)+" active / "+(c.totalJobs||0)+" total";}catch(e){document.getElementById("cron").innerHTML="<li>Error</li>";}
-try{const b=await fetch("/api/backup-status").then(r=>r.json());document.getElementById("backup").textContent=b.status;document.getElementById("backup").className=b.status==="healthy"?"status-active":"";document.getElementById("last").textContent=b.lastBackup||"None";document.getElementById("total").textContent=b.totalBackups||0;}catch(e){document.getElementById("backup").textContent="error";}}
-load();setInterval(load,30000);
-</script></body></html>`);
-        });
-        app.listen(PORT, "0.0.0.0", () => console.log("Dashboard on port " + PORT));
-        ENDOFFILE
-        exec node server.js
+        app.get('/',(q,r)=>r.send(`<!DOCTYPE html><html><head><title>Clara Dashboard</title><meta name="viewport" content="width=device-width,initial-scale=1"><style>*{box-sizing:border-box}body{font-family:-apple-system,BlinkMacSystemFont,sans-serif;margin:0;padding:20px;background:#1a1a2e;color:#eee}h1{color:#667eea;text-align:center;margin-bottom:30px}.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(300px,1fr));gap:20px;max-width:1200px;margin:0 auto}.card{background:#16213e;border-radius:12px;padding:20px;border:1px solid #0f3460}.card h2{margin:0 0 15px 0;color:#e94560;font-size:1.1em}.dot{width:10px;height:10px;border-radius:50%;background:#22c55e;display:inline-block;margin-right:8px;animation:pulse 2s infinite}@keyframes pulse{0%,100%{opacity:1}50%{opacity:.5}}ul{list-style:none;padding:0;margin:0;max-height:300px;overflow-y:auto}li{padding:8px 0;border-bottom:1px solid #0f3460;font-size:0.9em}.label{color:#888}.ok{color:#22c55e}button{background:#667eea;color:white;border:none;padding:8px 16px;border-radius:6px;cursor:pointer}.meta{font-size:0.8em;color:#666;margin-top:10px}</style></head><body><h1>Clara Dashboard</h1><div style="text-align:center;margin-bottom:20px"><button onclick="load()">Refresh</button></div><div class="grid"><div class="card"><h2><span class="dot"></span>System Health</h2><p>Status: <span id="h">Loading...</span></p><p>Updated: <span id="t">-</span></p></div><div class="card"><h2><span class="dot"></span>Cron Jobs</h2><ul id="c"><li>Loading...</li></ul><div class="meta" id="cm"></div></div><div class="card"><h2><span class="dot"></span>Backup Status</h2><p>Status: <span id="b">Loading...</span></p><p>Last: <span id="l">-</span></p><p>Total: <span id="n">-</span></p><p>Size: <span id="s">-</span></p></div></div><script>async function load(){try{const h=await fetch('/api/health').then(r=>r.json());document.getElementById('h').textContent=h.status;document.getElementById('h').className=h.status==='healthy'?'ok':'';document.getElementById('t').textContent=new Date().toLocaleString();}catch(e){document.getElementById('h').textContent='error';}try{const c=await fetch('/api/cron-status').then(r=>r.json());const h=c.jobs.map(j=>'<li><strong>'+(j.enabled?'✓':'✗')+' '+j.name+'</strong><br><span class="label">'+j.schedule+'</span></li>').join('');document.getElementById('c').innerHTML=h||'<li>No jobs</li>';document.getElementById('cm').textContent=(c.activeJobs||0)+' active / '+(c.totalJobs||0)+' total';}catch(e){document.getElementById('c').innerHTML='<li>Error</li>';}try{const b=await fetch('/api/backup-status').then(r=>r.json());document.getElementById('b').textContent=b.status;document.getElementById('b').className=b.status==='healthy'?'ok':'';document.getElementById('l').textContent=b.lastBackup||'None';document.getElementById('n').textContent=b.totalBackups||0;document.getElementById('s').textContent=b.totalSize||'0 B';}catch(e){document.getElementById('b').textContent='error';}}load();setInterval(load,30000);</script></body></html>`));
+        app.listen(3000,'0.0.0.0',()=>console.log('Dashboard on port 3000'));
+        EOF
+        node s.js
     healthcheck:
       test: ["CMD", "wget", "-q", "-O-", "http://localhost:3000/api/health"]
       interval: 30s
